@@ -1,0 +1,155 @@
+========================================================================
+PROJECT STATE  —  RE distribution from HXR (ADITYA-U / IPR)
+Reusable handoff note. Update the dated log at the bottom after each session.
+Last updated: 2026-06-30
+========================================================================
+
+------------------------------------------------------------------------
+1. ONE-PARAGRAPH WHAT-AND-WHY
+------------------------------------------------------------------------
+Runaway electrons (RE) in the ADITYA-U tokamak can't be measured directly.
+They emit hard X-rays (HXR) when decelerating; the detector records a
+SMEARED version of that emission. Goal: recover the true RE energy
+distribution from the measured HXR spectrum by DECONVOLUTION (MLEM /
+Richardson-Lucy), following Khilkevitch 2013. Long-term: feed this
+rule-based pipeline's outputs to train an ML model for real-time
+monitoring during live campaigns.
+
+------------------------------------------------------------------------
+2. THE CORE EQUATION AND WHAT EACH SYMBOL IS
+------------------------------------------------------------------------
+   y = H x + n        (Khilkevitch Eq. 1, matrix form)
+
+   x = true spectrum   (what we want to recover)
+   y = measured spectrum (what the detector records)
+   H = response matrix (the smearing the detector adds)
+   n = noise (Poisson)
+
+   Forward  (easy): x -> y , one matrix multiply  y = H @ x
+   Backward (hard): y -> x , MLEM iteration  = "deconvolution"
+
+   SCOPE NOTE: Khilkevitch is DETECTOR-ONLY. There x is a PHOTON spectrum
+   and H is the detector response (DRF) alone. The bremsstrahlung layer
+   H_e (electron -> photon) is OUR extension for the RE problem and is a
+   SEPARATE LATER LAYER. Do not mix it into the benchmark.
+
+------------------------------------------------------------------------
+3. MENTAL MODEL OF THE PAPER'S FIGURE 1 (locked-in understanding)
+------------------------------------------------------------------------
+   Fig 1c dashed = true source spectrum            = x_true
+   Fig 1b dots   = x_true smeared by detector      = y (measured)   [forward]
+   Fig 1c solid  = MLEM's recovered spectrum        = x_recon       [backward/deconvolution]
+   Fig 1b solid  = x_recon pushed back through DRF  = sanity check  [forward again]
+
+   Fig 1a = detector response to a SINGLE monoenergetic photon, at
+            3, 6, 8 MeV. Each curve = ONE COLUMN of H. These are 3
+            samples of how the response shape morphs with energy; the
+            other ~88 columns must be interpolated. (They are the
+            PAPER's NaI detector, not ADITYA-U's.)
+
+------------------------------------------------------------------------
+4. CURRENT STATE OF THE WORK
+------------------------------------------------------------------------
+PIPELINE: runs end-to-end on the digitized Fig 1 data:
+   load -> grid -> x_true -> H -> forward(y=Hx) -> MLEM -> compare
+
+VALIDATED:
+   - Self-consistency: MLEM(H @ x_true) returns x_true  -> engine wired correctly.
+   - Forward model reproduces Fig 1b two-peak structure.
+
+THE KEY GAP (what is still a placeholder):
+   - H is a CALIBRATED GAUSSIAN, not the real DRF.
+   - Only ONE number from Fig 1a entered H: the 8 MeV peak width
+     (FWHM ~0.64 MeV), used to set k in FWHM(E) = k*sqrt(E), k~0.226.
+   - The 3 and 6 MeV widths were measured but DISCARDED (digitization
+     made them unreliably narrow: 3% and 2% vs 8%).
+   - ALL 91 columns are Gaussians. ZERO real curve shape is in H.
+   - Missing: the Compton shelf, peak asymmetry, per-energy shape change.
+   => This is "borrowed one width number", NOT "H from Fig 1a".
+
+KNOWN NUMBERS:
+   - Grid: 1.0-10.0 MeV, 0.1 MeV bins -> 91 bins -> H is 91x91.
+   - x_true peaks at ~3.15 and ~4.35 MeV (matches paper).
+   - MLEM stop: FIXED 200 iterations (placeholder; standard practice is
+     20-100, so 200 is over-iterating). No convergence criterion yet.
+
+------------------------------------------------------------------------
+5. FILE STRUCTURE
+------------------------------------------------------------------------
+   Summer Project 2026/
+     code/
+       v1_gaussian_placeholder/   (pre-meeting: stage1+2 separate, guessed
+                                   Gaussian H, .npz baselines. KEEP as
+                                   baseline, do not edit.)
+       v2_realH_benchmark/        (current: single pipeline, H from Fig 1a
+                                   track. H isolated in the Step 2 cell.)
+            Stage1_RealData_H_and_validation.ipynb
+            drf_overlay.png, firstpass_check.png
+     data/         (the 7 digitized CSVs; shared)
+     papers/
+     plot creation/  (digitization + figure reproductions)
+
+   NOTE: notebook has DATA_DIR + a keyword file-resolver, so parenthesis
+   vs underscore filenames don't matter. Edit only DATA_DIR if data moves.
+
+------------------------------------------------------------------------
+6. NEXT STEPS (in priority order)
+------------------------------------------------------------------------
+   [A] When real DRF arrives from prof: swap ONLY the Step 2 (build H)
+       cell. Everything downstream runs unchanged. Run 2 is the verdict
+       (oscillations should drop, match to Fig 1c should tighten).
+   [B] Format-agnostic H-loader cell (build BEFORE H arrives; needs the
+       prof's answer on format + energy grid).
+   [C] MLEM upgrade: chi^2 tracking + discrepancy-principle stop
+       (replaces fixed-200; needs no real H, can do now).
+   [D] Quantitative benchmark metrics: peak-position error, peak-amplitude
+       error (paper: 2% / 5.5%), residual chi^2. Turns "eyeball" into numbers.
+   [E] (Optional) Pre-build real-shape interpolated H from the 3 digitized
+       Fig 1a curves as a dry run. Superseded by real DRF, so don't over-invest.
+
+------------------------------------------------------------------------
+7. OPEN QUESTIONS FOR THE PROFESSOR
+------------------------------------------------------------------------
+   1. Full interpolated real-shape H, or 3-column proof-of-concept first?
+   2. Careful H via parametric peak+shelf fit to the 3 curves, OR go
+      straight to an MCNP-computed DRF for ADITYA-U?
+   3. Is reproducing the Khilkevitch Fig 1b/1c benchmark the agreed
+      milestone before touching real ADITYA-U data?
+   4. What FORMAT and ENERGY GRID will the real DRF arrive in?
+      (full matrix vs per-energy curves -> decides the loader.)
+   5. What does the earlier "99.5% accuracy" requirement refer to?
+      (likely ML deployment reliability/throughput, not reconstruction accuracy.)
+
+------------------------------------------------------------------------
+8. IDEAS PARKED (raised, not yet committed)
+------------------------------------------------------------------------
+   - Replace the paper's hand-tuned heuristics (smoothing every j iters,
+     3-point averaging, 30%-narrower DRF) with grid search / Bayesian opt /
+     ML, tuned against synthetic ground-truth from the forward model.
+   - CAVEATS to state honestly: (a) tuning against synthetic data built
+     from our own H is circular -> validate on real benchmark too;
+     (b) optimal knobs depend on COUNT STATISTICS, which vary shot-to-shot
+     -> make knobs a function of count level, not one frozen constant;
+     (c) for the STOP, the discrepancy principle is more principled than
+     grid-searching n_iter. SEQUENCE: real H + benchmark FIRST, knob-tuning
+     SECOND. Don't let ML-tuning become a detour with 20 days left.
+
+------------------------------------------------------------------------
+9. KEY PRINCIPLES LEARNED (don't relitigate)
+------------------------------------------------------------------------
+   - Direct inversion x = H^-1 y fails: ill-conditioned, amplifies noise,
+     gives negative counts. MLEM fixes all three (iterative + non-negative).
+   - MLEM handles CONTINUOUS spectra (the RE case), not just discrete lines.
+     Discreteness is in the grid representation, not a restriction.
+   - High-energy reconstruction is limited by STATISTICS (few counts near
+     10 MeV), not by code. A good H can't fix starved data.
+   - Tag every modeling choice [PHYSICS] vs [PLACEHOLDER] so it's defensible.
+
+------------------------------------------------------------------------
+10. SESSION LOG (append newest at top)
+------------------------------------------------------------------------
+2026-06-30  Built v2 single-pipeline notebook on real digitized Fig 1 data;
+            validated MLEM self-consistency; confirmed H is still placeholder
+            Gaussian (only 8 MeV width used). Reorganized files into v1/v2.
+            Spending time reading paper + code thoroughly. Awaiting real DRF.
+========================================================================
