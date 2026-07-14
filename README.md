@@ -46,7 +46,6 @@ DeGaSum/
 ├── notes/                # Project documentation and reference papers
 │   ├── project_overview.md # Detailed project overview
 │   ├── restructure_plan.md # Restructuring plan and CLI guidelines
-│   └── papers/           # Original reference research PDFs
 └── requirements.txt      # Project dependencies
 ```
 
@@ -74,7 +73,7 @@ Core dependencies:
 
 The central entry point is [main.py](main.py), which provides a command-line interface (CLI) to run any step of the pipeline or the entire process end-to-end.
 
-*   **Run all steps sequentially (DRF -> Data Gen -> Train -> ML-EM -> Plot):**
+*   **Run all steps sequentially (DRF -> Data Gen -> Train -> ML-EM & Plotting):**
     ```bash
     python3 main.py --step all
     ```
