@@ -6,6 +6,7 @@ import numpy as np
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 from src.model import SpectralDeconvoluter1D
+from src.losses import PhysicsInformedDeconvolutionLoss
 
 def train_deconvoluter(dataset_path='data/processed/degas_ml_training_data.npz',
                        weights_save_path='models/degas_cnn_weights.pth',
@@ -53,7 +54,8 @@ def train_deconvoluter(dataset_path='data/processed/degas_ml_training_data.npz',
 
     # Initialize model
     model = SpectralDeconvoluter1D().to(device)
-    criterion = nn.MSELoss()
+    # criterion = nn.MSELoss()
+    criterion = PhysicsInformedDeconvolutionLoss(h_matrix_path='data/processed/detector_response_matrix.npy').to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     print(f"Starting training for {epochs} epochs...")
@@ -64,7 +66,8 @@ def train_deconvoluter(dataset_path='data/processed/degas_ml_training_data.npz',
             inputs, targets = inputs.to(device), targets.to(device)
             optimizer.zero_grad()
             outputs = model(inputs)
-            loss = criterion(outputs, targets)
+            # loss = criterion(outputs, targets)
+            loss = criterion(outputs, targets, inputs)
             loss.backward()
             optimizer.step()
             running_loss += loss.item() * inputs.size(0)
@@ -77,7 +80,8 @@ def train_deconvoluter(dataset_path='data/processed/degas_ml_training_data.npz',
             for inputs, targets in val_loader:
                 inputs, targets = inputs.to(device), targets.to(device)
                 outputs = model(inputs)
-                loss = criterion(outputs, targets)
+                # loss = criterion(outputs, targets)
+                loss = criterion(outputs, targets, inputs)
                 epoch_val_loss += loss.item() * inputs.size(0)
         epoch_val_loss /= len(val_loader.dataset)
         
