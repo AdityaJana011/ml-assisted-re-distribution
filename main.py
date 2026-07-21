@@ -17,15 +17,20 @@ def main():
         choices=['all', 'drf', 'data_gen', 'mlem', 'train', 'plot'],
         help="Pipeline step to run: drf, data_gen, mlem, train, plot, or all"
     )
+    parser.add_argument(
+        '--model',
+        type=str,
+        default='cnn',
+        choices=['cnn', 'transformer'],
+        help="Architecture for training: cnn or transformer"
+    )
     
     args = parser.parse_args()
     
-    # 1. DRF Matrix Construction
     if args.step in ['all', 'drf']:
         print("\n=== Running DRF Construction ===")
         construct_drf_matrix(raw_data_dir='data/raw', processed_data_dir='data/processed')
         
-    # 2. Synthetic Data Generation
     if args.step in ['all', 'data_gen']:
         print("\n=== Running Synthetic Data Generation ===")
         generate_synthetic_dataset(
@@ -35,21 +40,18 @@ def main():
             plot_out_path='outputs/diagnostics/Sample_pair.png'
         )
         
-    # 3. Model Training
     if args.step in ['all', 'train']:
-        print("\n=== Running 1D CNN Training ===")
+        print(f"\n=== Running {args.model.upper()} Model Training ===")
         train_deconvoluter(
             dataset_path='data/processed/degas_ml_training_data.npz',
-            weights_save_path='models/degas_cnn_weights.pth',
+            model_type=args.model,
             epochs=40
         )
         
-    # 4. Classical ML-EM Inversion
     if args.step in ['all', 'mlem']:
         print("\n=== Running Stabilized ML-EM Inversion ===")
         h_matrix_path = 'data/processed/detector_response_matrix.npy'
         if not os.path.exists(h_matrix_path):
-            print(f"Error: {h_matrix_path} not found. Running DRF step first.")
             construct_drf_matrix(raw_data_dir='data/raw', processed_data_dir='data/processed')
             
         h_matrix = np.load(h_matrix_path)
@@ -57,7 +59,6 @@ def main():
         epsilon_prime = np.linspace(0.01, 10.0, n_channels)
         d_epsilon_prime = epsilon_prime[1] - epsilon_prime[0]
         
-        # Simulate experimental spectrum matching Figure 1b/1c
         x_true = np.exp(-epsilon_prime / 3.0) * 100
         x_true += 500 * np.exp(-((epsilon_prime - 4.0) ** 2) / (2 * 0.15**2))
         x_true += 200 * np.exp(-((epsilon_prime - 7.0) ** 2) / (2 * 0.20**2))
@@ -68,10 +69,8 @@ def main():
         np.random.seed(42)
         y_measured = np.random.poisson(y_ideal)
         
-        # Run ML-EM
         x_recon, x_smoothed = run_mlem_inversion(y_measured, h_matrix, num_iterations=50)
         
-        # Plot and save
         os.makedirs('outputs/diagnostics', exist_ok=True)
         plt.figure(figsize=(7, 4.5))
         plt.plot(epsilon_prime, x_true, label="True Initial Spectrum $x(\\epsilon')$ (Dashed)", color="black", linestyle="--", alpha=0.7)
@@ -83,13 +82,11 @@ def main():
         plt.xlim(0, 10)
         plt.grid(True, linestyle=":", alpha=0.5)
         plt.legend(frameon=False)
-        plt.gca().tick_params(direction='in', top=True, right=True)
         plt.tight_layout()
         plt.savefig('outputs/diagnostics/degas_reconstruction_performance.png', dpi=300)
         plt.close()
-        print("ML-EM deconvolution complete. Plot saved to outputs/diagnostics/degas_reconstruction_performance.png")
+        print("ML-EM deconvolution complete. Saved to outputs/diagnostics/degas_reconstruction_performance.png")
         
-    # 5. Reproduce paper figures
     if args.step in ['all', 'plot']:
         print("\n=== Running Figure Reconstruction ===")
         file_mapping = {
@@ -102,10 +99,7 @@ def main():
             'c_recon': 'data/raw/graph_c(reconstructed_spectrum_solid_line).csv'
         }
         
-        data = {}
-        for key, filename in file_mapping.items():
-            data[key] = load_and_clean_digitized_data(filename)
-            
+        data = {key: load_and_clean_digitized_data(fn) for key, fn in file_mapping.items()}
         plot_and_save_figure_1a(data, out_path='outputs/figures/recon_figure_1a.png')
         plot_and_save_figure_1b(data, out_path='outputs/figures/recon_figure_1b.png')
         plot_and_save_figure_1c(data, out_path='outputs/figures/recon_figure_1c.png')
