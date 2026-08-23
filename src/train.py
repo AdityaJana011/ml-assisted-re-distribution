@@ -10,6 +10,7 @@ from src.losses import PhysicsInformedDeconvolutionLoss
 
 def train_deconvoluter(dataset_path='data/processed/degas_ml_training_data.npz',
                        weights_save_path='models/degas_cnn_weights.pth',
+                       h_matrix_path='data/processed/detector_response_matrix.npy',
                        epochs=40,
                        batch_size=64,
                        learning_rate=0.001,
@@ -54,11 +55,10 @@ def train_deconvoluter(dataset_path='data/processed/degas_ml_training_data.npz',
 
     # Initialize model
     model = SpectralDeconvoluter1D().to(device)
-    # criterion = nn.MSELoss()
-    criterion = PhysicsInformedDeconvolutionLoss(h_matrix_path='data/processed/detector_response_matrix.npy').to(device)
+    criterion = PhysicsInformedDeconvolutionLoss(h_matrix_path=h_matrix_path).to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
-    print(f"Starting training for {epochs} epochs...")
+    print(f"Starting PINN training for {epochs} epochs...")
     for epoch in range(epochs):
         model.train()
         running_loss = 0.0
@@ -66,7 +66,6 @@ def train_deconvoluter(dataset_path='data/processed/degas_ml_training_data.npz',
             inputs, targets = inputs.to(device), targets.to(device)
             optimizer.zero_grad()
             outputs = model(inputs)
-            # loss = criterion(outputs, targets)
             loss = criterion(outputs, targets, inputs)
             loss.backward()
             optimizer.step()
@@ -80,13 +79,12 @@ def train_deconvoluter(dataset_path='data/processed/degas_ml_training_data.npz',
             for inputs, targets in val_loader:
                 inputs, targets = inputs.to(device), targets.to(device)
                 outputs = model(inputs)
-                # loss = criterion(outputs, targets)
                 loss = criterion(outputs, targets, inputs)
                 epoch_val_loss += loss.item() * inputs.size(0)
         epoch_val_loss /= len(val_loader.dataset)
         
         if (epoch + 1) % 5 == 0 or epoch == 0:
-            print(f"Epoch {epoch+1:02d}/{epochs} | Normalized Train MSE: {epoch_train_loss:.6f} | Val MSE: {epoch_val_loss:.6f}")
+            print(f"Epoch {epoch+1:02d}/{epochs} | PINN Train Loss: {epoch_train_loss:.6f} | Val Loss: {epoch_val_loss:.6f}")
 
     # Save model weights
     os.makedirs(os.path.dirname(weights_save_path), exist_ok=True)
