@@ -2,7 +2,11 @@ import os
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
-from src.drf import construct_drf_matrix
+from src.drf import (
+    construct_drf_matrix, 
+    construct_bremsstrahlung_kernel, 
+    construct_total_response_matrix
+)
 from src.data_generator import generate_synthetic_dataset
 from src.mlem import run_mlem_inversion
 from src.train import train_deconvoluter
@@ -20,16 +24,51 @@ def main():
     parser.add_argument(
         '--model',
         type=str,
-        default='cnn',
+        default='transformer',
         choices=['cnn', 'transformer'],
         help="Architecture for training: cnn or transformer"
+    )
+    parser.add_argument(
+        '--two-layer',
+        action='store_true',
+        help="Use two-layer forward model H_tot = H_d @ H_e"
     )
     
     args = parser.parse_args()
     
     if args.step in ['all', 'drf']:
         print("\n=== Running DRF Construction ===")
-        construct_drf_matrix(raw_data_dir='data/raw', processed_data_dir='data/processed')
+        # Build physical DRF (loads full 6100 x 599 supervisor matrix if CSV exists)
+        construct_drf_matrix(
+            raw_data_dir='data/raw', 
+            processed_data_dir='data/processed',
+            resolution_scale=1.0
+        )
+        # Build 30% narrower DRF for deconvolution
+        construct_drf_matrix(
+            raw_data_dir='data/raw', 
+            processed_data_dir='data/processed',
+            resolution_scale=0.7
+        )
+        
+        if args.two_layer:
+            print("\n=== Building Two-Layer Bremsstrahlung Operator ===")
+            # Build H_e matching the true energy grid
+            construct_bremsstrahlung_kernel(
+                processed_data_dir='data/processed'
+            )
+            # Build physical H_tot = H_d @ H_e
+            construct_total_response_matrix(
+                h_d_path='data/processed/detector_response_matrix.npy',
+                h_e_path='data/processed/bremsstrahlung_emission_kernel.npy',
+                out_path='data/processed/total_response_matrix.npy'
+            )
+            # Build deconvolution (narrowed) H_tot_narrow = H_d_narrow @ H_e
+            construct_total_response_matrix(
+                h_d_path='data/processed/detector_response_matrix_narrow.npy',
+                h_e_path='data/processed/bremsstrahlung_emission_kernel.npy',
+                out_path='data/processed/total_response_matrix_narrow.npy'
+            )
         
     if args.step in ['all', 'data_gen']:
         print("\n=== Running Synthetic Data Generation ===")
@@ -37,55 +76,106 @@ def main():
             h_matrix_path='data/processed/detector_response_matrix.npy',
             out_npz_path='data/processed/degas_ml_training_data.npz',
             plot_sample=True,
-            plot_out_path='outputs/diagnostics/Sample_pair.png'
+            plot_out_path='outputs/diagnostics/Sample_pair.png',
+            two_layer=args.two_layer
         )
         
     if args.step in ['all', 'train']:
         print(f"\n=== Running {args.model.upper()} Model Training ===")
         train_deconvoluter(
             dataset_path='data/processed/degas_ml_training_data.npz',
-            model_type=args.model,
+            weights_save_path=f"models/degas_{args.model}_weights.pth",
             epochs=40
         )
         
     if args.step in ['all', 'mlem']:
         print("\n=== Running Stabilized ML-EM Inversion ===")
-        h_matrix_path = 'data/processed/detector_response_matrix.npy'
-        if not os.path.exists(h_matrix_path):
-            construct_drf_matrix(raw_data_dir='data/raw', processed_data_dir='data/processed')
-            
-        h_matrix = np.load(h_matrix_path)
-        n_channels = h_matrix.shape[1]
-        epsilon_prime = np.linspace(0.01, 10.0, n_channels)
-        d_epsilon_prime = epsilon_prime[1] - epsilon_prime[0]
         
+        # Determine paths based on layer mode
+        if args.two_layer:
+            h_forward_path = 'data/processed/total_response_matrix.npy'
+            h_backward_path = 'data/processed/total_response_matrix_narrow.npy'
+        else:
+            h_forward_path = 'data/processed/detector_response_matrix.npy'
+            h_backward_path = 'data/processed/detector_response_matrix_narrow.npy'
+            
+        # Re-build if missing
+        if not os.path.exists(h_forward_path) or not os.path.exists(h_backward_path):
+            print("Response matrices missing. Triggering DRF construction...")
+            construct_drf_matrix(resolution_scale=1.0)
+            construct_drf_matrix(resolution_scale=0.7)
+            if args.two_layer:
+                construct_bremsstrahlung_kernel()
+                construct_total_response_matrix(
+                    h_d_path='data/processed/detector_response_matrix.npy',
+                    h_e_path='data/processed/bremsstrahlung_emission_kernel.npy',
+                    out_path='data/processed/total_response_matrix.npy'
+                )
+                construct_total_response_matrix(
+                    h_d_path='data/processed/detector_response_matrix_narrow.npy',
+                    h_e_path='data/processed/bremsstrahlung_emission_kernel.npy',
+                    out_path='data/processed/total_response_matrix_narrow.npy'
+                )
+                
+        H_forward = np.load(h_forward_path)
+        H_backward = np.load(h_backward_path)
+        
+        # Load high-resolution energy grids if available
+        etrue_grid_path = 'data/processed/etrue_grid_keV.npy'
+        emeas_grid_path = 'data/processed/emeas_grid_keV.npy'
+        if os.path.exists(etrue_grid_path) and os.path.exists(emeas_grid_path):
+            epsilon_prime = np.load(etrue_grid_path) / 1000.0  # convert keV to MeV
+            epsilon_meas = np.load(emeas_grid_path) / 1000.0   # convert keV to MeV
+        else:
+            n_fine = H_forward.shape[1]
+            epsilon_prime = np.linspace(0.01, 10.0, n_fine)
+            epsilon_meas = np.linspace(0.01, 10.0, H_forward.shape[0])
+            
+        d_epsilon_prime = epsilon_prime[1] - epsilon_prime[0] if len(epsilon_prime) > 1 else 1.0
+        
+        # Set up a target physical spectrum with a background and 2 peaks
         x_true = np.exp(-epsilon_prime / 3.0) * 100
         x_true += 500 * np.exp(-((epsilon_prime - 4.0) ** 2) / (2 * 0.15**2))
-        x_true += 200 * np.exp(-((epsilon_prime - 7.0) ** 2) / (2 * 0.20**2))
+        x_true += 200 * np.exp(-((epsilon_prime - 2.5) ** 2) / (2 * 0.10**2))
         
-        y_ideal = np.dot(h_matrix, x_true) * d_epsilon_prime
+        # Convolve physical target with the forward operator
+        y_ideal = np.dot(H_forward, x_true) * d_epsilon_prime
         y_ideal = (y_ideal / np.sum(y_ideal)) * 10000
         
         np.random.seed(42)
         y_measured = np.random.poisson(y_ideal)
         
-        x_recon, x_smoothed = run_mlem_inversion(y_measured, h_matrix, num_iterations=50)
+        # Run stabilized MLEM with the split-matrix deconvolution (Trick 3)
+        x_recon, x_smoothed = run_mlem_inversion(
+            y_measured=y_measured, 
+            h_matrix=H_forward, 
+            h_backward=H_backward, 
+            num_iterations=100,
+            smooth_every=5,
+            init_mode='shevelev',
+            final_smooth=True
+        )
+        
+        # Area-normalize values for visualization
+        x_true_norm = x_true / np.sum(x_true)
+        x_recon_norm = x_recon / np.sum(x_recon)
+        x_smoothed_norm = x_smoothed / np.sum(x_smoothed)
         
         os.makedirs('outputs/diagnostics', exist_ok=True)
-        plt.figure(figsize=(7, 4.5))
-        plt.plot(epsilon_prime, x_true, label="True Initial Spectrum $x(\\epsilon')$ (Dashed)", color="black", linestyle="--", alpha=0.7)
-        plt.plot(epsilon_prime, x_recon, label="ML-EM (Raw)", color="red", linestyle=":", alpha=0.4)
-        plt.plot(epsilon_prime, x_smoothed, label="ML-EM (Smoothed)", color="red", linewidth=1.8)
-        plt.xlabel("Energy $\\epsilon'$ (MeV)")
-        plt.ylabel("N, counts per channel")
-        plt.title("ML-EM Reconstruction", fontsize=12, fontweight="bold")
-        plt.xlim(0, 10)
+        plt.figure(figsize=(8, 4.5))
+        plt.plot(epsilon_prime, x_true_norm, label="True Target (Dashed)", color="black", linestyle="--", alpha=0.7)
+        plt.plot(epsilon_prime, x_recon_norm, label="Full MLEM (Raw)", color="red", linestyle=":", alpha=0.4)
+        plt.plot(epsilon_prime, x_smoothed_norm, label="Full MLEM (Stabilized)", color="red", linewidth=1.8)
+        plt.xlabel("Energy (MeV)")
+        plt.ylabel("Area-Normalized Yield")
+        plt.title(f"Full Resolution ({H_forward.shape[0]}x{H_forward.shape[1]}) MLEM Reconstruction", fontsize=12, fontweight="bold")
+        plt.xlim(0, 6.0)
         plt.grid(True, linestyle=":", alpha=0.5)
         plt.legend(frameon=False)
         plt.tight_layout()
         plt.savefig('outputs/diagnostics/degas_reconstruction_performance.png', dpi=300)
         plt.close()
-        print("ML-EM deconvolution complete. Saved to outputs/diagnostics/degas_reconstruction_performance.png")
+        print(f"Full-resolution MLEM deconvolution ({H_forward.shape[0]}x{H_forward.shape[1]}) complete. Saved performance plot to outputs/diagnostics/degas_reconstruction_performance.png")
         
     if args.step in ['all', 'plot']:
         print("\n=== Running Figure Reconstruction ===")

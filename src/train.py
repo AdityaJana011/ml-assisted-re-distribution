@@ -9,7 +9,8 @@ from src.losses import PhysicsInformedDeconvolutionLoss
 
 def train_deconvoluter(dataset_path='data/processed/degas_ml_training_data.npz',
                        weights_save_path=None,
-                       model_type='cnn',
+                       h_matrix_path='data/processed/detector_response_matrix.npy',
+                       model_type='transformer',
                        epochs=40,
                        batch_size=64,
                        learning_rate=0.001,
@@ -50,18 +51,25 @@ def train_deconvoluter(dataset_path='data/processed/degas_ml_training_data.npz',
     Y_val_t = torch.tensor(Y_val_norm).unsqueeze(1)
     X_val_t = torch.tensor(X_val_norm)
 
+    # Prevent O(N^2) memory explosion in Transformer self-attention for N=6100
+    if model_type == 'transformer' and Y_train_t.shape[2] > 100:
+        Y_train_t = torch.nn.functional.interpolate(Y_train_t, size=100, mode='linear', align_corners=False)
+        X_train_t = torch.nn.functional.interpolate(X_train_t.unsqueeze(1), size=100, mode='linear', align_corners=False).squeeze(1)
+        Y_val_t = torch.nn.functional.interpolate(Y_val_t, size=100, mode='linear', align_corners=False)
+        X_val_t = torch.nn.functional.interpolate(X_val_t.unsqueeze(1), size=100, mode='linear', align_corners=False).squeeze(1)
+
     train_loader = DataLoader(TensorDataset(Y_train_t, X_train_t), batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(TensorDataset(Y_val_t, X_val_t), batch_size=batch_size, shuffle=False)
 
     # Model instantiation
     if model_type == 'transformer':
         print("Initializing 1D Transformer Encoder...")
-        model = SpectralTransformer1D().to(device)
+        model = SpectralTransformer1D(num_channels=Y_train_t.shape[2]).to(device)
     else:
         print("Initializing 1D CNN Deconvoluter...")
         model = SpectralDeconvoluter1D().to(device)
 
-    criterion = PhysicsInformedDeconvolutionLoss(h_matrix_path='data/processed/detector_response_matrix.npy').to(device)
+    criterion = PhysicsInformedDeconvolutionLoss(h_matrix_path=h_matrix_path).to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     print(f"Starting PINN training ({model_type.upper()}) for {epochs} epochs...")

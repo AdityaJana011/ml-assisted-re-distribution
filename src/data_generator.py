@@ -8,21 +8,34 @@ def generate_synthetic_dataset(h_matrix_path='data/processed/detector_response_m
                                total_counts=10000,
                                seed=42,
                                plot_sample=False,
-                               plot_out_path='outputs/diagnostics/Sample_pair.png'):
-    if not os.path.exists(h_matrix_path):
-        raise FileNotFoundError(f"Response matrix not found at {h_matrix_path}. Run DRF construction first.")
-        
+                               plot_out_path='outputs/diagnostics/Sample_pair.png',
+                               two_layer=False):
+    
+    if two_layer:
+        h_matrix_path = 'data/processed/total_response_matrix.npy'
+        if not os.path.exists(h_matrix_path):
+            print("Total response matrix not found. Re-building H_d, H_e, and H_tot...")
+            from src.drf import construct_drf_matrix, construct_bremsstrahlung_kernel, construct_total_response_matrix
+            construct_drf_matrix()
+            construct_bremsstrahlung_kernel()
+            construct_total_response_matrix()
+    else:
+        if not os.path.exists(h_matrix_path):
+            raise FileNotFoundError(f"Response matrix not found at {h_matrix_path}. Run DRF construction first.")
+            
     h_matrix = np.load(h_matrix_path)
     n_channels = h_matrix.shape[0]
+    n_channels_true = h_matrix.shape[1]
     
-    epsilon_prime = np.linspace(0.01, 10.0, n_channels)
+    epsilon_prime = np.linspace(0.01, 10.0, n_channels_true)
+    epsilon_meas = np.linspace(0.01, 10.0, n_channels)
     d_epsilon_prime = epsilon_prime[1] - epsilon_prime[0]
     
     X_targets = []
     Y_inputs = []
     
     np.random.seed(seed)
-    print(f"Starting corrected generation of {num_samples} training pairs...")
+    print(f"Starting corrected generation of {num_samples} training pairs (two_layer={two_layer})...")
     
     for i in range(num_samples):
         # Generate random physical background (exponential decay)
@@ -69,11 +82,13 @@ def generate_synthetic_dataset(h_matrix_path='data/processed/detector_response_m
         os.makedirs(os.path.dirname(plot_out_path), exist_ok=True)
         sample_idx = np.random.randint(0, num_samples)
         plt.figure(figsize=(7, 4.5))
-        plt.plot(epsilon_prime, X_targets[sample_idx], label="Target: True Plasma $x(\\epsilon')$", color="black", alpha=0.5)
-        plt.step(epsilon_prime, Y_inputs[sample_idx], label="Input: Noisy Detector $y(\\epsilon)$", color="crimson", where="mid")
+        target_label = "Target: True Electron $f(\\epsilon'')$" if two_layer else "Target: True Photon $x(\\epsilon')$"
+        input_label = "Input: Noisy Detector $y(\\epsilon)$"
+        plt.plot(epsilon_prime, X_targets[sample_idx], label=target_label, color="black", alpha=0.5)
+        plt.step(epsilon_meas, Y_inputs[sample_idx], label=input_label, color="crimson", where="mid")
         plt.xlabel("Energy (MeV)")
         plt.ylabel("Counts")
-        plt.title(f"Visualizing Sample Data Pair #{sample_idx}")
+        plt.title(f"Visualizing Sample Data Pair #{sample_idx} ({'Two-Layer' if two_layer else 'Single-Layer'})")
         plt.legend(frameon=False)
         plt.tight_layout()
         plt.savefig(plot_out_path, dpi=300)

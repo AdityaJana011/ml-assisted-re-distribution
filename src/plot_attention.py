@@ -13,23 +13,24 @@ def visualize_attention_heads(
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # 2. Load Model
-    model = SpectralTransformer1D(num_channels=100, d_model=64, nhead=4).to(device)
-    try:
-        model.load_state_dict(torch.load(weights_path, map_location=device))
-        model.eval()
-        print("Transformer weights loaded successfully.")
-    except Exception as e:
-        print(f"Error loading weights: {e}")
-        return
-
     # 3. Load a Single Sample
     data = np.load(dataset_path)
     Y_data = data['inputs'].astype(np.float32)
+
+    # 2. Load Model
+    model = SpectralTransformer1D(num_channels=100, d_model=64, nhead=4).to(device)
+    if os.path.exists(weights_path):
+        model.load_state_dict(torch.load(weights_path, map_location=device))
+        model.eval()
+        print("Transformer weights loaded successfully.")
+    else:
+        print(f"Warning: Weights not found at '{weights_path}'. Plotting untrained attention maps.")
     
     # Area-normalize the input just like in training
     y_sample = Y_data[sample_idx] / np.sum(Y_data[sample_idx])
-    y_tensor = torch.tensor(y_sample).unsqueeze(0).unsqueeze(1).to(device) # Shape: (1, 1, 100)
+    y_tensor = torch.tensor(y_sample).unsqueeze(0).unsqueeze(1).to(device) # Shape: (1, 1, seq_len)
+    if y_tensor.shape[2] > 100:
+        y_tensor = torch.nn.functional.interpolate(y_tensor, size=100, mode='linear', align_corners=False)
 
     # 4. Push data through the embedding layers (Manual Forward Pass)
     with torch.no_grad():
