@@ -1,1 +1,8 @@
 papers
+data/raw/response_matrix.csv
+data/processed/*.npy
+data/processed/*.npz
+models/*.pth
+*.pyc
+__pycache__/
+.DS_Store
