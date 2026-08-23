@@ -33,43 +33,28 @@ def main():
         action='store_true',
         help="Use two-layer forward model H_tot = H_d @ H_e"
     )
-    parser.add_argument(
-        '--refine',
-        type=int,
-        default=1,
-        help="Channel refinement scale factor (N_fine = REFINE * N_coarse)"
-    )
     
     args = parser.parse_args()
     
-    n_coarse = 100
-    n_fine = n_coarse * args.refine
-    
     if args.step in ['all', 'drf']:
         print("\n=== Running DRF Construction ===")
-        # Build physical DRF
+        # Build physical DRF (loads full 6100 x 599 supervisor matrix if CSV exists)
         construct_drf_matrix(
             raw_data_dir='data/raw', 
             processed_data_dir='data/processed',
-            n_channels_measured=n_coarse,
-            n_channels_true=n_fine,
             resolution_scale=1.0
         )
         # Build 30% narrower DRF for deconvolution
         construct_drf_matrix(
             raw_data_dir='data/raw', 
             processed_data_dir='data/processed',
-            n_channels_measured=n_coarse,
-            n_channels_true=n_fine,
             resolution_scale=0.7
         )
         
         if args.two_layer:
             print("\n=== Building Two-Layer Bremsstrahlung Operator ===")
-            # Build H_e
+            # Build H_e matching the true energy grid
             construct_bremsstrahlung_kernel(
-                n_channels_true=n_fine,
-                n_channels_photon=n_fine,
                 processed_data_dir='data/processed'
             )
             # Build physical H_tot = H_d @ H_e
@@ -97,8 +82,6 @@ def main():
         
     if args.step in ['all', 'train']:
         print(f"\n=== Running {args.model.upper()} Model Training ===")
-        # On this branch, we train the 1D CNN model. We check if two_layer dataset is available.
-        # Physics-informed deconvolution loss is not implemented on master, so training is supervised.
         train_deconvoluter(
             dataset_path='data/processed/degas_ml_training_data.npz',
             weights_save_path=f"models/degas_{args.model}_weights.pth",
@@ -119,11 +102,10 @@ def main():
         # Re-build if missing
         if not os.path.exists(h_forward_path) or not os.path.exists(h_backward_path):
             print("Response matrices missing. Triggering DRF construction...")
-            # Run DRF step
-            construct_drf_matrix(n_channels_measured=n_coarse, n_channels_true=n_fine, resolution_scale=1.0)
-            construct_drf_matrix(n_channels_measured=n_coarse, n_channels_true=n_fine, resolution_scale=0.7)
+            construct_drf_matrix(resolution_scale=1.0)
+            construct_drf_matrix(resolution_scale=0.7)
             if args.two_layer:
-                construct_bremsstrahlung_kernel(n_channels_true=n_fine, n_channels_photon=n_fine)
+                construct_bremsstrahlung_kernel()
                 construct_total_response_matrix(
                     h_d_path='data/processed/detector_response_matrix.npy',
                     h_e_path='data/processed/bremsstrahlung_emission_kernel.npy',
@@ -138,13 +120,23 @@ def main():
         H_forward = np.load(h_forward_path)
         H_backward = np.load(h_backward_path)
         
-        epsilon_prime = np.linspace(0.01, 10.0, n_fine)
-        d_epsilon_prime = epsilon_prime[1] - epsilon_prime[0]
+        # Load high-resolution energy grids if available
+        etrue_grid_path = 'data/processed/etrue_grid_keV.npy'
+        emeas_grid_path = 'data/processed/emeas_grid_keV.npy'
+        if os.path.exists(etrue_grid_path) and os.path.exists(emeas_grid_path):
+            epsilon_prime = np.load(etrue_grid_path) / 1000.0  # convert keV to MeV
+            epsilon_meas = np.load(emeas_grid_path) / 1000.0   # convert keV to MeV
+        else:
+            n_fine = H_forward.shape[1]
+            epsilon_prime = np.linspace(0.01, 10.0, n_fine)
+            epsilon_meas = np.linspace(0.01, 10.0, H_forward.shape[0])
+            
+        d_epsilon_prime = epsilon_prime[1] - epsilon_prime[0] if len(epsilon_prime) > 1 else 1.0
         
         # Set up a target physical spectrum with a background and 2 peaks
         x_true = np.exp(-epsilon_prime / 3.0) * 100
         x_true += 500 * np.exp(-((epsilon_prime - 4.0) ** 2) / (2 * 0.15**2))
-        x_true += 200 * np.exp(-((epsilon_prime - 7.0) ** 2) / (2 * 0.20**2))
+        x_true += 200 * np.exp(-((epsilon_prime - 2.5) ** 2) / (2 * 0.10**2))
         
         # Convolve physical target with the forward operator
         y_ideal = np.dot(H_forward, x_true) * d_epsilon_prime
@@ -164,26 +156,26 @@ def main():
             final_smooth=True
         )
         
-        # Area-normalize values to avoid scaling mismatches in visualization
+        # Area-normalize values for visualization
         x_true_norm = x_true / np.sum(x_true)
         x_recon_norm = x_recon / np.sum(x_recon)
         x_smoothed_norm = x_smoothed / np.sum(x_smoothed)
         
         os.makedirs('outputs/diagnostics', exist_ok=True)
-        plt.figure(figsize=(7, 4.5))
+        plt.figure(figsize=(8, 4.5))
         plt.plot(epsilon_prime, x_true_norm, label="True Target (Dashed)", color="black", linestyle="--", alpha=0.7)
-        plt.plot(epsilon_prime, x_recon_norm, label="MLEM (Raw)", color="red", linestyle=":", alpha=0.4)
-        plt.plot(epsilon_prime, x_smoothed_norm, label="MLEM (Stabilized)", color="red", linewidth=1.8)
+        plt.plot(epsilon_prime, x_recon_norm, label="Full MLEM (Raw)", color="red", linestyle=":", alpha=0.4)
+        plt.plot(epsilon_prime, x_smoothed_norm, label="Full MLEM (Stabilized)", color="red", linewidth=1.8)
         plt.xlabel("Energy (MeV)")
         plt.ylabel("Area-Normalized Yield")
-        plt.title("Stabilized MLEM Reconstruction", fontsize=12, fontweight="bold")
-        plt.xlim(0, 10)
+        plt.title(f"Full Resolution ({H_forward.shape[0]}x{H_forward.shape[1]}) MLEM Reconstruction", fontsize=12, fontweight="bold")
+        plt.xlim(0, 6.0)
         plt.grid(True, linestyle=":", alpha=0.5)
         plt.legend(frameon=False)
         plt.tight_layout()
         plt.savefig('outputs/diagnostics/degas_reconstruction_performance.png', dpi=300)
         plt.close()
-        print("ML-EM deconvolution complete. Saved performance plot to outputs/diagnostics/degas_reconstruction_performance.png")
+        print(f"Full-resolution MLEM deconvolution ({H_forward.shape[0]}x{H_forward.shape[1]}) complete. Saved performance plot to outputs/diagnostics/degas_reconstruction_performance.png")
         
     if args.step in ['all', 'plot']:
         print("\n=== Running Figure Reconstruction ===")

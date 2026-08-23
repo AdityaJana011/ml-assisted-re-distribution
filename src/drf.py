@@ -4,7 +4,21 @@ import pandas as pd
 from scipy.interpolate import interp1d
 
 def construct_drf_matrix(raw_data_dir='data/raw', processed_data_dir='data/processed', 
-                         n_channels_measured=100, n_channels_true=100, resolution_scale=1.0):
+                         n_channels_measured=100, n_channels_true=100, resolution_scale=1.0,
+                         use_supervisor_csv=True, csv_path='../response_matrix.csv'):
+    """
+    Construct or load the Detector Response Function (H_d).
+    If use_supervisor_csv=True and the supervisor file exists, it loads the full 6100 x 599 matrix
+    without losing any energy resolution. Otherwise, it uses the digitized 3/6/8 MeV curves.
+    """
+    if use_supervisor_csv and os.path.exists(csv_path):
+        print(f"Loading full-resolution supervisor response matrix from {csv_path}...")
+        return process_supervisor_drf_matrix(
+            csv_path=csv_path, 
+            processed_data_dir=processed_data_dir, 
+            resolution_scale=resolution_scale
+        )
+        
     epsilon = np.linspace(0.01, 10.0, n_channels_measured)
     epsilon_prime = np.linspace(0.01, 10.0, n_channels_true)
     
@@ -83,6 +97,56 @@ def construct_drf_matrix(raw_data_dir='data/raw', processed_data_dir='data/proce
     print(f"Saved to {out_path}")
     return h_matrix
 
+def process_supervisor_drf_matrix(csv_path='../response_matrix.csv', 
+                                  processed_data_dir='data/processed',
+                                  resolution_scale=1.0):
+    """
+    Process the full 6100 x 599 supervisor CSV matrix without downsampling.
+    Preserves all physical energy channels (Emeas: 0.5 to 6099.5 keV, Etrue: 20 to 6000 keV).
+    """
+    df = pd.read_csv(csv_path)
+    
+    e_meas_raw = df['Emeas_center_keV'].values  # 6100 channels (keV)
+    true_cols = [c for c in df.columns if c != 'Emeas_center_keV']
+    e_true_raw = np.array([float(c.split('_')[1].replace('p', '.')) for c in true_cols]) # 599 channels (keV)
+    
+    h_matrix = df[true_cols].values.copy() # shape (6100, 599)
+    
+    # Save the true and measured energy grids (in keV and MeV for reference)
+    os.makedirs(processed_data_dir, exist_ok=True)
+    np.save(os.path.join(processed_data_dir, 'emeas_grid_keV.npy'), e_meas_raw)
+    np.save(os.path.join(processed_data_dir, 'etrue_grid_keV.npy'), e_true_raw)
+    
+    # Peak-narrowing trick (Trick 3): narrow peak around its center for backward step
+    if resolution_scale != 1.0:
+        h_narrow = np.zeros_like(h_matrix)
+        for j in range(h_matrix.shape[1]):
+            ep = e_true_raw[j] # true energy in keV
+            # Narrow the measured energy response around ep
+            e_meas_narrowed = ep + (e_meas_raw - ep) * resolution_scale
+            f_narrow = interp1d(e_meas_raw, h_matrix[:, j], bounds_error=False, fill_value=0.0)
+            column_narrow = f_narrow(e_meas_narrowed)
+            
+            c_sum = np.sum(column_narrow)
+            if c_sum > 0:
+                column_narrow /= c_sum
+            h_narrow[:, j] = column_narrow
+            
+        h_matrix = h_narrow
+    else:
+        # Re-normalize columns to ensure sum is exactly 1.0
+        for j in range(h_matrix.shape[1]):
+            c_sum = np.sum(h_matrix[:, j])
+            if c_sum > 0:
+                h_matrix[:, j] /= c_sum
+
+    out_filename = 'detector_response_matrix.npy' if resolution_scale == 1.0 else 'detector_response_matrix_narrow.npy'
+    out_path = os.path.join(processed_data_dir, out_filename)
+    np.save(out_path, h_matrix)
+    print(f"Successfully processed Full Supervisor DRF Matrix (scale={resolution_scale}) to shape: {h_matrix.shape}")
+    print(f"Saved to {out_path}")
+    return h_matrix
+
 def bethe_heitler_spectrum(E_electron, k_array):
     """
     Compute dN/dk (un-normalized) for an electron of energy E_electron,
@@ -99,15 +163,21 @@ def bethe_heitler_spectrum(E_electron, k_array):
     spectrum[valid] = (1.0 / k) * (1.0 - x + 0.75 * x**2)
     return spectrum
 
-def construct_bremsstrahlung_kernel(n_channels_true=100, n_channels_photon=100, processed_data_dir='data/processed'):
+def construct_bremsstrahlung_kernel(n_channels_true=599, n_channels_photon=599, processed_data_dir='data/processed'):
     """
-    Build the electron -> photon matrix H_e using Bethe-Heitler cross-section.
+    Build the electron -> photon matrix H_e using Bethe-Heitler cross-section matching the Etrue grid.
     Each column is normalized to sum to 1.
     """
-    E_electron_grid = np.linspace(0.01, 10.0, n_channels_true)
-    E_photon_grid = np.linspace(0.01, 10.0, n_channels_photon)
+    grid_path = os.path.join(processed_data_dir, 'etrue_grid_keV.npy')
+    if os.path.exists(grid_path):
+        E_true_grid = np.load(grid_path)
+        E_electron_grid = E_true_grid
+        E_photon_grid = E_true_grid
+    else:
+        E_electron_grid = np.linspace(20.0, 6000.0, n_channels_true)
+        E_photon_grid = np.linspace(20.0, 6000.0, n_channels_photon)
     
-    h_e = np.zeros((n_channels_photon, n_channels_true))
+    h_e = np.zeros((len(E_photon_grid), len(E_electron_grid)))
     
     for i, E_electron in enumerate(E_electron_grid):
         spectrum = bethe_heitler_spectrum(E_electron, E_photon_grid)

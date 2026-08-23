@@ -63,11 +63,12 @@ def run_mlem_inversion(y_measured, h_matrix, h_backward=None, num_iterations=50,
 
     # Initialization (Trick 1 addition / Shevelev)
     if init_mode == 'shevelev':
-        # x_0 = y * (sum(y) / sum(H_forward @ y)) to preserve total counts
-        y_projected_init = np.dot(H_forward, y_measured)
+        # Back-project y_measured into true energy domain: shape (n_true,)
+        x_init_raw = np.dot(H_backward.T, y_measured)
+        y_projected_init = np.dot(H_forward, x_init_raw)
         sum_proj = np.sum(y_projected_init)
         scale = np.sum(y_measured) / sum_proj if sum_proj > 0 else 1.0
-        x_recon = y_measured * scale
+        x_recon = x_init_raw * scale
     else:
         # Flat average baseline
         x_recon = np.full(n_true, np.sum(y_measured) / n_true)
