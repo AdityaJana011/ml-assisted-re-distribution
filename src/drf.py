@@ -5,19 +5,23 @@ from scipy.interpolate import interp1d
 
 def construct_drf_matrix(raw_data_dir='data/raw', processed_data_dir='data/processed', 
                          n_channels_measured=100, n_channels_true=100, resolution_scale=1.0,
-                         use_supervisor_csv=True, csv_path='../response_matrix.csv'):
+                         use_supervisor_csv=True, csv_path='data/raw/response_matrix.csv'):
     """
     Construct or load the Detector Response Function (H_d).
     If use_supervisor_csv=True and the supervisor file exists, it loads the full 6100 x 599 matrix
     without losing any energy resolution. Otherwise, it uses the digitized 3/6/8 MeV curves.
     """
-    if use_supervisor_csv and os.path.exists(csv_path):
-        print(f"Loading full-resolution supervisor response matrix from {csv_path}...")
-        return process_supervisor_drf_matrix(
-            csv_path=csv_path, 
-            processed_data_dir=processed_data_dir, 
-            resolution_scale=resolution_scale
-        )
+    if use_supervisor_csv:
+        if not os.path.exists(csv_path) and os.path.exists('../response_matrix.csv'):
+            csv_path = '../response_matrix.csv'
+            
+        if os.path.exists(csv_path):
+            print(f"Loading full-resolution supervisor response matrix from {csv_path}...")
+            return process_supervisor_drf_matrix(
+                csv_path=csv_path, 
+                processed_data_dir=processed_data_dir, 
+                resolution_scale=resolution_scale
+            )
         
     epsilon = np.linspace(0.01, 10.0, n_channels_measured)
     epsilon_prime = np.linspace(0.01, 10.0, n_channels_true)
