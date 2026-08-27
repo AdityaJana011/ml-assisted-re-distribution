@@ -1,3 +1,12 @@
 papers
 venv/
+.venv/
 project_state/
+my_code/
+data/*
+!data/raw/
+!data/processed/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+results/
