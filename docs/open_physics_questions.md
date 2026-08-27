@@ -4,24 +4,34 @@ These questions must be answered before treating the real-response reconstructio
 
 ## 1. What exactly is `data/response_matrix.csv`?
 
-Current code-level diagnostic:
+Code-level diagnostic (full matrix):
 
 - Matrix shape is `6100 x 599`.
 - Rows are measured-energy bins from `0.5` to `6099.5 keV`.
 - Columns are true-energy bins from `20` to `6000 keV`.
-- Columns are nonnegative and approximately column-stochastic.
-- Tested columns peak at very low measured energy, not near `E_meas = E_true`.
-- No strong diagonal photopeak or 511/1022 keV escape-peak pattern appears.
+- Columns are nonnegative and approximately column-stochastic (sums 0.999-1.0).
+- For `E_true` up to ~200-300 keV, each column peaks at `E_meas ~= E_true`
+  (photopeak / diagonal ridge) with a Compton tail below.
+- Above ~500 keV the full-energy peak collapses: columns peak in the lowest
+  measured bin and the centroid falls well below `E_true`
+  (e.g. `E_true = 6000` -> centroid ~2070 keV).
 
 Working interpretation:
 
-- This behaves more like a full forward operator `H_tot` than a detector-only response `H_d`.
-- If true, the reconstructed vector `x` should be interpreted as the source/RE-side distribution represented by the matrix columns.
+- Low-energy photopeak ridge + high-energy photofraction collapse is standard
+  detector-response behavior. This looks like a detector-only response `H_d`,
+  consistent with the earlier corner-slice conclusion.
+- If so, the reconstructed vector `x` is a photon spectrum. An electron-to-HXR
+  operator `H_e` (Bethe-Heitler) is still required to form `H_tot = H_d @ H_e`
+  and reach the RE energy distribution.
+- The earlier "more like `H_tot`" note came from high-energy columns / the
+  geometrically mismatched `drf_corner.csv` and missed the low-energy diagonal.
 
 Still needed:
 
-- Confirm from the matrix source/model whether this CSV already includes electron-to-HXR generation plus detector response, or only detector response.
-- Confirm what physical quantity each column maps from: RE energy distribution, photon source spectrum, or another simulated source basis.
+- Confirm from the matrix source/model that this is detector-only `H_d`.
+- Obtain or construct `H_e` (electron -> HXR generation).
+- Confirm units, and what physical quantity each column maps from.
 
 ## 2. What are the units and normalization conventions?
 
