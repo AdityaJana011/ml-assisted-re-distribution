@@ -2,6 +2,14 @@
 
 This branch currently contains several generations of the project. Use this map to avoid mixing fake, reference, and current real-response work.
 
+## Status (2026-08-28)
+
+- `data/response_matrix.csv` reads as a detector-only response `H_d` (6100 x 599),
+  not the full operator `H_tot`. See `docs/open_physics_questions.md` Q1.
+- No electron-to-HXR operator `H_e` yet, so current reconstructions are photon
+  spectra, not runaway-electron distributions.
+- `docs/considerations.md` (paper physics checklist) drives the pre-`H_e` work.
+
 ## Current Mainline
 
 These are the files to use for the current ADITYA-U real-response path.
@@ -36,22 +44,29 @@ These are the files to use for the current ADITYA-U real-response path.
 
 These are digitized reference-paper curves. They are useful for comparison and background understanding, but they are not the supplied real `6100 x 599` response matrix.
 
-## Real-H Notebook Area
+## Archive
 
-- `v2_real_H_benchmark/Stage1_RealData_H_and_validation - Copy.ipynb`
-  - Older reference-paper DRF benchmark notebook.
-  - Not the current real-response mainline.
-  - Contains a stale final-cell error.
-- `v2_real_H_benchmark/*.png`
-  - Exploratory plots from real/reference validation.
-  - Treat as generated or discussion artifacts unless explicitly needed.
+- `archive/` — superseded generations, reference only, do not build on these:
+  - `v1_gaussian_placeholder/` — earliest toy pipeline, fake `100 x 100` matrices
+  - `Stage1_RealData_H_and_validation - Copy.ipynb` — old paper-DRF benchmark, stale final-cell error
+  - `v2_exploratory_plots/` — early validation plots, no captions
+  - see `archive/README.md`
 
-## Fake-H Placeholder Area
+## ML Scaffold
 
-- `v1_gaussian_placeholder/`
-  - Early toy pipeline using fake `100 x 100` matrices.
-  - Useful only as learning/archive material.
-  - Not valid for the current real-response pipeline.
+- `v3_ml/PINN_Transformer_scaffold.ipynb` — runnable patch-transformer + physics-informed
+  loss on the real `H_d`. Starting point only: underfits (posterior-mean collapse,
+  val relative-L2 ~0.69). Caveats + next steps in the notebook's first and last cells.
+
+## Branches
+
+- `aditya` (this) — real `6100 x 599` `H_d` validation + ML scaffold; no `H_e`
+- `master` — older `100 x 100` lineage (`main.py`, `src/drf.py`, `src/model.py`)
+- `origin/trial/-transformer` — `SpectralTransformer1D` + attention plots; `master` layout, placeholder `H`
+- `origin/trial/-PINN` — physics-loss (`src/losses.py`) + supervised CNN; `master` layout, placeholder `H`
+- `origin/trial/-1d-cnn-tricks` — CNN tuning
+- Trial branches predate this branch's real-response work and have diverged; porting a
+  model onto the real-response line is a task, not a merge.
 
 ## External Reference
 
