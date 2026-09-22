@@ -1,0 +1,186 @@
+{
+  "matrix": {
+    "shape": [
+      6100,
+      599
+    ],
+    "e_meas_range_keV": [
+      0.5,
+      6099.5
+    ],
+    "e_true_range_keV": [
+      20.0,
+      6000.0
+    ],
+    "e_meas_step_first_keV": 1.0,
+    "e_true_step_first_keV": 10.0,
+    "finite": true,
+    "min_value": 0.0,
+    "max_value": 0.52212,
+    "negative_count": 0,
+    "column_sum_min": 0.9989999999999998,
+    "column_sum_max": 1.0000000000000004,
+    "column_sum_mean": 0.9999959432387312,
+    "column_sum_std": 4.9370698732657376e-05,
+    "dead_columns": 0,
+    "dead_rows": 9
+  },
+  "operator_diagnostic": [
+    {
+      "e_true_keV": 20.0,
+      "global_peak_keV": 0.5,
+      "peak_on_diagonal": false,
+      "photopeak_to_colmax": 0.46009594417793287,
+      "fraction_above_true_energy": 0.30452,
+      "escape_511": false,
+      "escape_1022": false
+    },
+    {
+      "e_true_keV": 500.0,
+      "global_peak_keV": 0.5,
+      "peak_on_diagonal": false,
+      "photopeak_to_colmax": 0.121730482347091,
+      "fraction_above_true_energy": 0.21578,
+      "escape_511": false,
+      "escape_1022": false
+    },
+    {
+      "e_true_keV": 1500.0,
+      "global_peak_keV": 0.5,
+      "peak_on_diagonal": false,
+      "photopeak_to_colmax": 0.00929676443316578,
+      "fraction_above_true_energy": 0.07350999999999999,
+      "escape_511": false,
+      "escape_1022": false
+    },
+    {
+      "e_true_keV": 3000.0,
+      "global_peak_keV": 0.5,
+      "peak_on_diagonal": false,
+      "photopeak_to_colmax": 0.002302379125095932,
+      "fraction_above_true_energy": 0.03528999999999999,
+      "escape_511": false,
+      "escape_1022": false
+    },
+    {
+      "e_true_keV": 6000.0,
+      "global_peak_keV": 0.5,
+      "peak_on_diagonal": false,
+      "photopeak_to_colmax": 0.0006156924616154231,
+      "fraction_above_true_energy": 0.011961961961961967,
+      "escape_511": false,
+      "escape_1022": false
+    }
+  ],
+  "synthetic_case": {
+    "kind": "bulk_plus_tail",
+    "total_counts": 100000.0,
+    "seed": 0,
+    "true_peak_keV": 20.0
+  },
+  "mlem": {
+    "n_iter": 300,
+    "noiseless_final_relative_l2": 0.0039009822072270327,
+    "noiseless_recovered_peak_keV": 20.0,
+    "noisy_l2_min_iteration": 30,
+    "noisy_l2_min": 0.06669859763452785,
+    "noisy_chi2_near_1_iteration": 4,
+    "noisy_chi2_at_l2_min": 0.40252461077567875,
+    "noisy_chi2_near_1": 1.0219679093479606,
+    "best_smoothing": {
+      "smooth_every": 5,
+      "final_smooth": true,
+      "relative_l2": 0.04906796764828815
+    },
+    "reprojection_chi2_reduced": 0.4085954139915399
+  },
+  "validation_cases": [
+    {
+      "case": "bulk_plus_tail",
+      "seed": 0,
+      "true_peak_keV": 20.0,
+      "noiseless_final_relative_l2": 0.0039009822072270327,
+      "noiseless_recovered_peak_keV": 20.0,
+      "noisy_l2_min_iteration": 30,
+      "noisy_l2_min": 0.06669859763452785,
+      "noisy_chi2_near_1_iteration": 4,
+      "noisy_chi2_near_1": 1.0219679093479606
+    },
+    {
+      "case": "single_exp",
+      "seed": 1,
+      "true_peak_keV": 20.0,
+      "noiseless_final_relative_l2": 0.0011217742548171599,
+      "noiseless_recovered_peak_keV": 20.0,
+      "noisy_l2_min_iteration": 8,
+      "noisy_l2_min": 0.03318268013469202,
+      "noisy_chi2_near_1_iteration": 3,
+      "noisy_chi2_near_1": 1.0802669947083012
+    },
+    {
+      "case": "delta_2mev",
+      "seed": 2,
+      "true_peak_keV": 2000.0,
+      "noiseless_final_relative_l2": 0.11049402213783766,
+      "noiseless_recovered_peak_keV": 2000.0,
+      "noisy_l2_min_iteration": 300,
+      "noisy_l2_min": 0.10025765074197424,
+      "noisy_chi2_near_1_iteration": 18,
+      "noisy_chi2_near_1": 0.9909904439030484
+    },
+    {
+      "case": "two_peaks",
+      "seed": 3,
+      "true_peak_keV": 900.0,
+      "noiseless_final_relative_l2": 0.026899721170457268,
+      "noiseless_recovered_peak_keV": 900.0,
+      "noisy_l2_min_iteration": 78,
+      "noisy_l2_min": 0.1177383060596477,
+      "noisy_chi2_near_1_iteration": 9,
+      "noisy_chi2_near_1": 1.0366672425061567
+    }
+  ],
+  "smoothing_sweep": [
+    {
+      "smooth_every": 5,
+      "final_smooth": true,
+      "relative_l2": 0.04906796764828815
+    },
+    {
+      "smooth_every": 10,
+      "final_smooth": true,
+      "relative_l2": 0.04994527454794968
+    },
+    {
+      "smooth_every": 5,
+      "final_smooth": false,
+      "relative_l2": 0.05052262356357614
+    },
+    {
+      "smooth_every": 8,
+      "final_smooth": true,
+      "relative_l2": 0.05119918247987494
+    },
+    {
+      "smooth_every": 10,
+      "final_smooth": false,
+      "relative_l2": 0.05201652801561176
+    },
+    {
+      "smooth_every": 0,
+      "final_smooth": true,
+      "relative_l2": 0.05341199391261257
+    },
+    {
+      "smooth_every": 8,
+      "final_smooth": false,
+      "relative_l2": 0.057395764428453525
+    },
+    {
+      "smooth_every": 0,
+      "final_smooth": false,
+      "relative_l2": 0.06669859763452785
+    }
+  ],
+  "open_physics_note": "Operator diagnostics can suggest H_tot vs H_d behavior, but final interpretation must be confirmed from the response-matrix source/model."
+}
